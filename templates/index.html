@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="Vid2PDF – Convert videos of handwritten or printed notes into clean, readable PDF documents instantly. Smart frame extraction, blur removal, and duplicate detection.">
+    <meta name="theme-color" content="#0a0a1a">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <title>Vid2PDF – Smart Video to Document Converter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+    <!-- ═══ Animated Background ═══ -->
+    <div class="bg-gradient" aria-hidden="true">
+        <div class="bg-orb bg-orb--1"></div>
+        <div class="bg-orb bg-orb--2"></div>
+        <div class="bg-orb bg-orb--3"></div>
+    </div>
+
+    <!-- ═══ Header ═══ -->
+    <header class="header" id="header">
+        <div class="header__inner">
+            <div class="header__brand">
+                <div class="header__logo">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                        <rect x="2" y="4" width="18" height="24" rx="2" stroke="url(#logo-gradient)" stroke-width="2" />
+                        <path d="M8 12h8M8 16h6M8 20h8" stroke="url(#logo-gradient)" stroke-width="1.5"
+                            stroke-linecap="round" />
+                        <path d="M22 8l8 8-8 8" stroke="url(#logo-gradient)" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                        <circle cx="26" cy="16" r="2" fill="url(#logo-gradient)" />
+                        <defs>
+                            <linearGradient id="logo-gradient" x1="0" y1="0" x2="32" y2="32">
+                                <stop stop-color="#818cf8" />
+                                <stop offset="1" stop-color="#c084fc" />
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="header__title">Vid2PDF</h1>
+                    <p class="header__subtitle">Smart Video to Document Converter</p>
+                </div>
+            </div>
+            <div class="header__actions">
+                <button class="btn btn--ghost" id="btn-new-session" title="Start New Session" style="display:none;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14" />
+                    </svg>
+                    New
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main" id="main">
+        <!-- ═══ Section 1: Upload ═══ -->
+        <section class="section section--upload" id="section-upload">
+            <div class="section__header">
+                <span class="section__step">01</span>
+                <h2 class="section__title">Upload Your Video</h2>
+                <p class="section__desc">Drop a video of handwritten or printed notes. We'll extract the best frames
+                    automatically.</p>
+            </div>
+
+            <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Click or drag to upload video">
+                <div class="dropzone__content">
+                    <div class="dropzone__icon">
+                        <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+                            <circle cx="28" cy="28" r="27" stroke="url(#dz-grad)" stroke-width="2"
+                                stroke-dasharray="6 4" opacity="0.5" />
+                            <path d="M28 18v20M20 26l8-8 8 8" stroke="url(#dz-grad)" stroke-width="2.5"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                            <defs>
+                                <linearGradient id="dz-grad" x1="0" y1="0" x2="56" y2="56">
+                                    <stop stop-color="#818cf8" />
+                                    <stop offset="1" stop-color="#c084fc" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                    <p class="dropzone__title">Drag & drop your video here</p>
+                    <p class="dropzone__hint">or click to browse</p>
+                    <div class="dropzone__formats">MP4 · AVI · MOV · MKV · WebM · FLV — Max 200MB</div>
+                </div>
+                <input type="file" id="file-input" accept=".mp4,.avi,.mov,.mkv,.webm,.flv" hidden>
+            </div>
+
+            <!-- File info after selection -->
+            <div class="file-info" id="file-info" style="display:none;">
+                <div class="file-info__icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                        <polyline points="14,2 14,8 20,8" />
+                    </svg>
+                </div>
+                <div class="file-info__details">
+                    <span class="file-info__name" id="file-name"></span>
+                    <span class="file-info__size" id="file-size"></span>
+                </div>
+                <button class="file-info__remove" id="btn-remove-file" title="Remove file">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Upload progress -->
+            <div class="upload-progress" id="upload-progress" style="display:none;">
+                <div class="upload-progress__bar">
+                    <div class="upload-progress__fill" id="upload-progress-fill"></div>
+                </div>
+                <span class="upload-progress__text" id="upload-progress-text">Uploading...</span>
+            </div>
+
+            <!-- Process button -->
+            <button class="btn btn--primary btn--lg" id="btn-process" style="display:none;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5,3 19,12 5,21" />
+                </svg>
+                Process Video
+            </button>
+        </section>
+
+        <!-- ═══ Section 2: Processing ═══ -->
+        <section class="section section--processing" id="section-processing" style="display:none;">
+            <div class="section__header">
+                <span class="section__step">02</span>
+                <h2 class="section__title">Processing</h2>
+                <p class="section__desc">Sit back while we extract and enhance your pages.</p>
+            </div>
+
+            <div class="processing-card glass-card">
+                <!-- Stage indicators -->
+                <div class="stages" id="stages">
+                    <div class="stage" data-stage="extracting" id="stage-extracting">
+                        <div class="stage__icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="2" y="2" width="20" height="20" rx="2" />
+                                <circle cx="12" cy="12" r="3" />
+                                <path d="M2 12h4M18 12h4" />
+                            </svg>
+                        </div>
+                        <div class="stage__info">
+                            <span class="stage__name">Extracting Frames</span>
+                            <span class="stage__status" id="stage-extracting-status">Waiting...</span>
+                        </div>
+                        <div class="stage__check">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5">
+                                <polyline points="20,6 9,17 4,12" />
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="stage" data-stage="filtering" id="stage-filtering">
+                        <div class="stage__icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path
+                                    d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" />
+                            </svg>
+                        </div>
+                        <div class="stage__info">
+                            <span class="stage__name">Blur Detection</span>
+                            <span class="stage__status" id="stage-filtering-status">Waiting...</span>
+                        </div>
+                        <div class="stage__check">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5">
+                                <polyline points="20,6 9,17 4,12" />
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="stage" data-stage="deduplicating" id="stage-deduplicating">
+                        <div class="stage__icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="3" y="3" width="7" height="7" />
+                                <rect x="14" y="3" width="7" height="7" />
+                                <rect x="3" y="14" width="7" height="7" />
+                                <path d="M17.5 14v7h-7" />
+                            </svg>
+                        </div>
+                        <div class="stage__info">
+                            <span class="stage__name">Removing Duplicates</span>
+                            <span class="stage__status" id="stage-deduplicating-status">Waiting...</span>
+                        </div>
+                        <div class="stage__check">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5">
+                                <polyline points="20,6 9,17 4,12" />
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="stage" data-stage="enhancing" id="stage-enhancing">
+                        <div class="stage__icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polygon
+                                    points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
+                            </svg>
+                        </div>
+                        <div class="stage__info">
+                            <span class="stage__name">Deskew · Correct · Enhance</span>
+                            <span class="stage__status" id="stage-enhancing-status">Waiting...</span>
+                        </div>
+                        <div class="stage__check">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5">
+                                <polyline points="20,6 9,17 4,12" />
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="stage" data-stage="generating" id="stage-generating">
+                        <div class="stage__icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                                <polyline points="14,2 14,8 20,8" />
+                            </svg>
+                        </div>
+                        <div class="stage__info">
+                            <span class="stage__name">Generating 300 DPI PDF</span>
+                            <span class="stage__status" id="stage-generating-status">Waiting...</span>
+                        </div>
+                        <div class="stage__check">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5">
+                                <polyline points="20,6 9,17 4,12" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Overall progress bar -->
+                <div class="progress-bar" id="overall-progress">
+                    <div class="progress-bar__track">
+                        <div class="progress-bar__fill" id="overall-progress-fill"></div>
+                    </div>
+                    <span class="progress-bar__label" id="overall-progress-label">0%</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ Section 3: Results ═══ -->
+        <section class="section section--results" id="section-results" style="display:none;">
+            <div class="section__header">
+                <span class="section__step">03</span>
+                <h2 class="section__title">Your Pages</h2>
+                <p class="section__desc">Preview the extracted pages. Click any page to toggle it on/off before
+                    downloading.</p>
+            </div>
+
+            <!-- Stats bar -->
+            <div class="stats-bar glass-card" id="stats-bar">
+                <div class="stat">
+                    <span class="stat__value" id="stat-extracted">–</span>
+                    <span class="stat__label">Extracted</span>
+                </div>
+                <div class="stat__divider"></div>
+                <div class="stat">
+                    <span class="stat__value" id="stat-blur-removed">–</span>
+                    <span class="stat__label">Blurry Removed</span>
+                </div>
+                <div class="stat__divider"></div>
+                <div class="stat">
+                    <span class="stat__value" id="stat-dups-removed">–</span>
+                    <span class="stat__label">Duplicates Removed</span>
+                </div>
+                <div class="stat__divider"></div>
+                <div class="stat">
+                    <span class="stat__value stat__value--highlight" id="stat-final">–</span>
+                    <span class="stat__label">Final Pages</span>
+                </div>
+            </div>
+
+            <!-- Frame preview grid -->
+            <div class="frame-grid" id="frame-grid">
+                <!-- Frames will be rendered by JS -->
+            </div>
+
+            <!-- Actions -->
+            <div class="results-actions">
+                <button class="btn btn--primary btn--lg" id="btn-download">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                        <polyline points="7,10 12,15 17,10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    Download PDF
+                </button>
+                <button class="btn btn--ghost" id="btn-start-over">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 4v6h6" />
+                        <path d="M3.51 15a9 9 0 105.69-9.31L1 10" />
+                    </svg>
+                    Start Over
+                </button>
+            </div>
+        </section>
+
+        <!-- ═══ Error Section ═══ -->
+        <section class="section section--error" id="section-error" style="display:none;">
+            <div class="error-card glass-card">
+                <div class="error-card__icon">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="15" y1="9" x2="9" y2="15" />
+                        <line x1="9" y1="9" x2="15" y2="15" />
+                    </svg>
+                </div>
+                <h3 class="error-card__title">Something went wrong</h3>
+                <p class="error-card__message" id="error-message"></p>
+                <button class="btn btn--primary" id="btn-retry">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 4v6h6" />
+                        <path d="M3.51 15a9 9 0 105.69-9.31L1 10" />
+                    </svg>
+                    Try Again
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <!-- ═══ Image Preview Lightbox ═══ -->
+    <div class="lightbox" id="lightbox" aria-hidden="true" role="dialog" aria-label="Image Preview">
+        <div class="lightbox__backdrop" id="lightbox-backdrop"></div>
+        <div class="lightbox__container">
+            <!-- Top bar -->
+            <div class="lightbox__topbar">
+                <div class="lightbox__info">
+                    <span class="lightbox__page-label" id="lightbox-page-label">Page 1 / 1</span>
+                    <span class="lightbox__quality-badge" id="lightbox-quality-badge"></span>
+                </div>
+                <div class="lightbox__actions">
+                    <button class="lightbox__btn lightbox__btn--toggle" id="lightbox-toggle-select" title="Toggle page selection">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20,6 9,17 4,12"/>
+                        </svg>
+                        <span id="lightbox-toggle-text">Deselect</span>
+                    </button>
+                    <button class="lightbox__btn" id="lightbox-zoom-in" title="Zoom In">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                            <line x1="11" y1="8" x2="11" y2="14"/>
+                            <line x1="8" y1="11" x2="14" y2="11"/>
+                        </svg>
+                    </button>
+                    <button class="lightbox__btn" id="lightbox-zoom-out" title="Zoom Out">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                            <line x1="8" y1="11" x2="14" y2="11"/>
+                        </svg>
+                    </button>
+                    <button class="lightbox__btn" id="lightbox-zoom-reset" title="Reset Zoom">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M15 3h6v6"/>
+                            <path d="M9 21H3v-6"/>
+                            <path d="M21 3l-7 7"/>
+                            <path d="M3 21l7-7"/>
+                        </svg>
+                    </button>
+                    <button class="lightbox__btn lightbox__btn--close" id="lightbox-close" title="Close preview (Esc)">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Image viewport -->
+            <div class="lightbox__viewport" id="lightbox-viewport">
+                <img class="lightbox__image" id="lightbox-image" src="" alt="Preview" draggable="false">
+            </div>
+
+            <!-- Navigation arrows -->
+            <button class="lightbox__nav lightbox__nav--prev" id="lightbox-prev" title="Previous (←)">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15,18 9,12 15,6"/>
+                </svg>
+            </button>
+            <button class="lightbox__nav lightbox__nav--next" id="lightbox-next" title="Next (→)">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9,6 15,12 9,18"/>
+                </svg>
+            </button>
+
+            <!-- Thumbnail strip -->
+            <div class="lightbox__strip" id="lightbox-strip">
+                <!-- Thumbnails rendered by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ Footer ═══ -->
+    <footer class="footer">
+        <p>Made with <span class="footer__heart">♥</span> by chinmaya @shivansh developer</p>
+    </footer>
+
+    <script src="/static/js/app.js"></script>
+</body>
+
+</html>
