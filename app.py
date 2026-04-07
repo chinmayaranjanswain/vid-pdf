@@ -1,6 +1,7 @@
 """
 Vid2PDF – Flask Web Application
-Serves the frontend and handles video processing API requests.
+Production-ready server with multi-user support, thread-safe job management,
+automatic cleanup, and Render/Gunicorn compatibility.
 """
 
 import os
@@ -10,22 +11,81 @@ import shutil
 import time
 import threading
 import queue
+import gc
 from flask import (
     Flask, request, jsonify, send_file, send_from_directory,
     Response, render_template, stream_with_context
 )
 
-from processor import process_video
+from processor import process_video, generate_pdf
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200MB max upload
 
-# Temporary storage for jobs
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_uploads")
+# ─── Configuration ────────────────────────────────────────────────────────────
+
+# Use /tmp on Render (ephemeral filesystem) or local temp_uploads for dev
+if os.environ.get("RENDER"):
+    UPLOAD_DIR = "/tmp/vid2pdf_uploads"
+else:
+    UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_uploads")
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Job status tracking
-jobs = {}
+# Cleanup config
+MAX_JOB_AGE = 900        # 15 minutes — aggressive cleanup for cloud
+MAX_CONCURRENT_JOBS = 10  # Limit to prevent disk/memory exhaustion
+
+# ─── Thread-Safe Job Manager ──────────────────────────────────────────────────
+
+class JobManager:
+    """Thread-safe job state management for multi-user concurrency."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._jobs = {}
+
+    def create(self, job_id, data):
+        with self._lock:
+            self._jobs[job_id] = data
+
+    def get(self, job_id):
+        with self._lock:
+            return self._jobs.get(job_id)
+
+    def update(self, job_id, **kwargs):
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id].update(kwargs)
+
+    def delete(self, job_id):
+        with self._lock:
+            self._jobs.pop(job_id, None)
+
+    def exists(self, job_id):
+        with self._lock:
+            return job_id in self._jobs
+
+    def count(self):
+        with self._lock:
+            return len(self._jobs)
+
+    def all_ids(self):
+        with self._lock:
+            return list(self._jobs.keys())
+
+    def get_field(self, job_id, field):
+        with self._lock:
+            job = self._jobs.get(job_id)
+            return job.get(field) if job else None
+
+    def set_field(self, job_id, field, value):
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id][field] = value
+
+
+jobs = JobManager()
 
 
 def get_job_dir(job_id):
@@ -59,6 +119,15 @@ def upload_video():
             "error": f"Unsupported file format '{ext}'. Allowed: {', '.join(allowed_extensions)}"
         }), 400
 
+    # Check concurrent job limit
+    if jobs.count() >= MAX_CONCURRENT_JOBS:
+        # Try cleanup first
+        cleanup_old_jobs()
+        if jobs.count() >= MAX_CONCURRENT_JOBS:
+            return jsonify({
+                "error": "Server is busy. Please try again in a few minutes."
+            }), 503
+
     # Create job
     job_id = str(uuid.uuid4())[:8]
     job_dir = get_job_dir(job_id)
@@ -72,7 +141,7 @@ def upload_video():
     file_size = os.path.getsize(video_path)
 
     # Initialize job status
-    jobs[job_id] = {
+    jobs.create(job_id, {
         "status": "uploaded",
         "video_path": video_path,
         "filename": file.filename,
@@ -80,7 +149,8 @@ def upload_video():
         "stats": None,
         "error": None,
         "queue": None,
-    }
+        "created_at": time.time(),
+    })
 
     return jsonify({
         "job_id": job_id,
@@ -93,17 +163,16 @@ def upload_video():
 @app.route("/api/process/<job_id>")
 def process(job_id):
     """Process the uploaded video. Returns progress via Server-Sent Events."""
-    if job_id not in jobs:
+    if not jobs.exists(job_id):
         return jsonify({"error": "Job not found"}), 404
 
-    job = jobs[job_id]
+    job = jobs.get(job_id)
     if job["status"] == "processing":
         return jsonify({"error": "Job is already being processed"}), 409
 
     # Create a thread-safe queue for progress events
     event_queue = queue.Queue()
-    job["queue"] = event_queue
-    job["status"] = "processing"
+    jobs.update(job_id, queue=event_queue, status="processing")
 
     def progress_callback(stage, percent, message):
         """Called by the processor to report progress. Pushes events to queue."""
@@ -121,8 +190,11 @@ def process(job_id):
 
             stats = process_video(video_path, job_dir, progress_callback)
 
-            job["stats"] = stats
-            job["status"] = "completed"
+            jobs.update(job_id, stats=stats, status="completed")
+
+            # Delete the source video to save disk space
+            if os.path.exists(video_path):
+                os.remove(video_path)
 
             # Send completion event
             event_queue.put({
@@ -132,8 +204,7 @@ def process(job_id):
                 "stats": stats,
             })
         except Exception as e:
-            job["status"] = "error"
-            job["error"] = str(e)
+            jobs.update(job_id, status="error", error=str(e))
             event_queue.put({
                 "stage": "error",
                 "percent": 0,
@@ -142,6 +213,8 @@ def process(job_id):
         finally:
             # Sentinel: signal end of stream
             event_queue.put(None)
+            # Free memory
+            gc.collect()
 
     # Start the processing in a background thread
     thread = threading.Thread(target=process_worker, daemon=True)
@@ -174,10 +247,10 @@ def process(job_id):
 @app.route("/api/status/<job_id>")
 def job_status(job_id):
     """Get the current status of a job."""
-    if job_id not in jobs:
+    if not jobs.exists(job_id):
         return jsonify({"error": "Job not found"}), 404
 
-    job = jobs[job_id]
+    job = jobs.get(job_id)
     return jsonify({
         "status": job["status"],
         "filename": job.get("filename"),
@@ -189,10 +262,10 @@ def job_status(job_id):
 @app.route("/api/preview/<job_id>")
 def preview_frames(job_id):
     """Get list of extracted frame thumbnails."""
-    if job_id not in jobs:
+    if not jobs.exists(job_id):
         return jsonify({"error": "Job not found"}), 404
 
-    job = jobs[job_id]
+    job = jobs.get(job_id)
     if not job.get("stats"):
         return jsonify({"error": "Processing not completed yet"}), 400
 
@@ -214,10 +287,10 @@ def preview_frames(job_id):
 @app.route("/api/preview/<job_id>/<int:frame_index>")
 def preview_frame(job_id, frame_index):
     """Get a specific frame image."""
-    if job_id not in jobs:
+    if not jobs.exists(job_id):
         return jsonify({"error": "Job not found"}), 404
 
-    job = jobs[job_id]
+    job = jobs.get(job_id)
     if not job.get("stats"):
         return jsonify({"error": "Processing not completed yet"}), 400
 
@@ -235,10 +308,10 @@ def preview_frame(job_id, frame_index):
 @app.route("/api/download/<job_id>")
 def download_pdf(job_id):
     """Download the generated PDF, optionally with only selected pages."""
-    if job_id not in jobs:
+    if not jobs.exists(job_id):
         return jsonify({"error": "Job not found"}), 404
 
-    job = jobs[job_id]
+    job = jobs.get(job_id)
     if not job.get("stats"):
         return jsonify({"error": "Processing not completed yet"}), 400
 
@@ -284,7 +357,6 @@ def download_pdf(job_id):
             return jsonify({"error": "Enhanced image files not found"}), 404
 
         # Generate a new PDF with only selected pages
-        from processor import generate_pdf
         custom_pdf_path = os.path.join(job_dir, "output_selected.pdf")
         generate_pdf(selected_paths, custom_pdf_path, dpi=300)
 
@@ -315,29 +387,71 @@ def cleanup(job_id):
     if os.path.exists(job_dir):
         shutil.rmtree(job_dir, ignore_errors=True)
 
-    if job_id in jobs:
-        del jobs[job_id]
+    jobs.delete(job_id)
 
     return jsonify({"message": "Cleaned up successfully"})
 
 
-# ─── Cleanup old jobs on startup ────────────────────────────────────────────────
+# ─── Health Check (for Render) ─────────────────────────────────────────────────
+
+@app.route("/health")
+def health():
+    """Health check endpoint for Render and load balancers."""
+    return jsonify({
+        "status": "healthy",
+        "active_jobs": jobs.count(),
+    })
+
+
+# ─── Automatic Cleanup ────────────────────────────────────────────────────────
 
 def cleanup_old_jobs():
-    """Remove temp files older than 1 hour."""
-    if not os.path.exists(UPLOAD_DIR):
-        return
-    now = time.time()
-    for name in os.listdir(UPLOAD_DIR):
-        path = os.path.join(UPLOAD_DIR, name)
-        if os.path.isdir(path):
-            age = now - os.path.getmtime(path)
-            if age > 3600:  # 1 hour
-                shutil.rmtree(path, ignore_errors=True)
+    """Remove temp files and stale job entries older than MAX_JOB_AGE."""
+    # Clean orphaned directories on disk
+    if os.path.exists(UPLOAD_DIR):
+        now = time.time()
+        for name in os.listdir(UPLOAD_DIR):
+            path = os.path.join(UPLOAD_DIR, name)
+            if os.path.isdir(path):
+                try:
+                    age = now - os.path.getmtime(path)
+                    if age > MAX_JOB_AGE:
+                        shutil.rmtree(path, ignore_errors=True)
+                except OSError:
+                    pass
+
+    # Clean stale job entries from memory
+    for job_id in jobs.all_ids():
+        job = jobs.get(job_id)
+        if job:
+            created = job.get("created_at", 0)
+            if time.time() - created > MAX_JOB_AGE:
+                job_dir = get_job_dir(job_id)
+                if os.path.exists(job_dir):
+                    shutil.rmtree(job_dir, ignore_errors=True)
+                jobs.delete(job_id)
 
 
+def periodic_cleanup():
+    """Background thread that runs cleanup every 5 minutes."""
+    while True:
+        time.sleep(300)  # 5 minutes
+        try:
+            cleanup_old_jobs()
+            gc.collect()  # Free memory
+        except Exception:
+            pass
+
+
+# Run cleanup on startup
 cleanup_old_jobs()
 
+# Start periodic cleanup thread
+_cleanup_thread = threading.Thread(target=periodic_cleanup, daemon=True)
+_cleanup_thread.start()
+
+
+# ─── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("\n🎬 Vid2PDF – Smart Video to Document Converter")

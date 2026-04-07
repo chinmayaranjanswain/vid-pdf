@@ -7,6 +7,7 @@ CLAHE, adaptive threshold, sharpening), and 300 DPI PDF generation.
 
 import os
 import math
+import gc
 import cv2
 import numpy as np
 from PIL import Image
@@ -463,6 +464,11 @@ def generate_pdf(image_paths, output_path, dpi=300):
         quality=95,
     )
 
+    # Close all images to free memory
+    for img in pil_images:
+        img.close()
+    del pil_images
+
     return output_path
 
 
@@ -512,9 +518,19 @@ def process_video(video_path, output_dir, progress_callback=None):
     if not frames:
         raise ValueError("No frames could be extracted from the video.")
 
+    # Delete source video to free disk space early
+    try:
+        if os.path.exists(video_path):
+            os.remove(video_path)
+    except OSError:
+        pass
+
     # ── Stage 2: Filter blurry frames ──
     report("filtering", 0, "Detecting and removing blurry frames...")
     sharp_frames, blur_removed = filter_blurry_frames(frames, threshold=80.0)
+    extracted_count = len(frames)
+    del frames  # Free raw frames memory
+    gc.collect()
     report("filtering", 100,
            f"Removed {blur_removed} blurry frames, "
            f"{len(sharp_frames)} sharp frames remaining")
@@ -529,6 +545,8 @@ def process_video(video_path, output_dir, progress_callback=None):
     unique_frames, dup_removed = remove_duplicates(
         sharp_frames, similarity_threshold=0.92
     )
+    del sharp_frames  # Free filtered frames memory
+    gc.collect()
     report("deduplicating", 100,
            f"Removed {dup_removed} duplicate frames, "
            f"{len(unique_frames)} unique pages remaining")
@@ -536,39 +554,24 @@ def process_video(video_path, output_dir, progress_callback=None):
     if not unique_frames:
         raise ValueError("No unique frames found after filtering.")
 
-    # ── Stage 4: Enhance images (full pipeline) ──
-    report("enhancing", 0, "Starting document enhancement...")
+    # ── Stage 4: Save pages ──
+    report("enhancing", 0, "Preparing pages...")
     enhanced_paths = []
     total = len(unique_frames)
 
     for i, (idx, frame, score) in enumerate(unique_frames):
-        # Save original frame for preview
+        # Save frame for preview
         frame_path = os.path.join(frames_dir, f"frame_{i:04d}.jpg")
         cv2.imwrite(frame_path, frame)
 
-        # Sub-step a: Perspective correction
-        corrected = perspective_correction(frame)
-
-        # Sub-step b: Auto deskew
-        deskewed = auto_deskew(corrected)
-
-        # Sub-step c: Crop borders & shadows
-        cropped = crop_borders(deskewed)
-
-        # Sub-steps d–i: Full enhancement pipeline
-        enhanced = enhance_image(cropped, mode="enhanced")
-
-        # Save enhanced image as high-quality PNG for PDF generation
+        # Save as high-quality PNG for PDF generation (no filters applied)
         enhanced_path = os.path.join(enhanced_dir, f"enhanced_{i:04d}.png")
-        cv2.imwrite(enhanced_path, enhanced,
+        cv2.imwrite(enhanced_path, frame,
                     [cv2.IMWRITE_PNG_COMPRESSION, 3])
         enhanced_paths.append(enhanced_path)
 
         percent = int((i + 1) / total * 100)
-        step_desc = f"Enhanced page {i + 1}/{total}"
-        if i == 0:
-            step_desc += " (perspective → deskew → crop → enhance)"
-        report("enhancing", percent, step_desc)
+        report("enhancing", percent, f"Saved page {i + 1}/{total}")
 
     # ── Stage 5: Generate 300 DPI PDF ──
     report("generating", 0, "Generating 300 DPI print-ready PDF...")
@@ -577,18 +580,24 @@ def process_video(video_path, output_dir, progress_callback=None):
     report("generating", 100,
            f"PDF generated with {len(enhanced_paths)} pages at 300 DPI!")
 
+    # Free enhancement memory
+    final_page_count = total  # total was set from len(unique_frames) earlier
+    del unique_frames
+    gc.collect()
+
     # Return stats
     stats = {
         "total_video_frames": total_frames,
-        "extracted_frames": len(frames),
+        "extracted_frames": extracted_count,
         "blur_removed": blur_removed,
         "duplicates_removed": dup_removed,
-        "final_pages": len(unique_frames),
+        "final_pages": final_page_count,
         "pdf_path": pdf_path,
         "frame_paths": [
             os.path.join(frames_dir, f"frame_{i:04d}.jpg")
-            for i in range(len(unique_frames))
+            for i in range(final_page_count)
         ],
     }
 
     return stats
+
