@@ -247,8 +247,14 @@
             const response = await fetch(`/api/process/${jobId}`);
 
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || "Processing failed");
+                let errorMsg = "Processing failed";
+                try {
+                    const err = await response.json();
+                    errorMsg = err.error || errorMsg;
+                } catch {
+                    errorMsg = `Server error (${response.status}). Please try again.`;
+                }
+                throw new Error(errorMsg);
             }
 
             const reader = response.body.getReader();
